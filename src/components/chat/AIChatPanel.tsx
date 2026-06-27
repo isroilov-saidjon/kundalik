@@ -76,18 +76,31 @@ export default function AIChatPanel() {
       const localTime = now.toTimeString().slice(0, 5) // HH:MM
 
       // Pending meeting requests
-      const mrRes = await fetch('/api/meeting-requests')
+      const [mrRes, meRes, groupsRes] = await Promise.all([
+        fetch('/api/meeting-requests'),
+        fetch('/api/me'),
+        fetch('/api/groups'),
+      ])
       const mrData = await mrRes.json()
-      const meRes = await fetch('/api/me')
       const meData = await meRes.json()
+      const groupsData = await groupsRes.json()
+
       const pendingRequests = Array.isArray(mrData)
         ? mrData.filter((r: { status: string; to_user_id: string }) => r.status === 'pending' && r.to_user_id === meData?.id)
         : []
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const groups = Array.isArray(groupsData) ? groupsData.map((g: any) => ({
+        id: g.id,
+        name: g.name,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        members: (g.group_members || []).map((m: any) => m.profiles?.email).filter(Boolean),
+      })) : []
+
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: currentInput, history, localDate, localTime, pendingRequests }),
+        body: JSON.stringify({ message: currentInput, history, localDate, localTime, pendingRequests, groups }),
       })
       const data = await res.json()
 
@@ -126,6 +139,18 @@ export default function AIChatPanel() {
           }
 
           if (task.action === 'clarify') continue
+
+          // Group event: create for all group members
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (task.type === 'group' && (task as any).groupId) {
+            await fetch('/api/events/group', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              body: JSON.stringify({ ...task, group_id: (task as any).groupId }),
+            })
+            continue
+          }
 
           if (task.date && task.time) {
             const taskStart = new Date(`${task.date}T${task.time}:00`)

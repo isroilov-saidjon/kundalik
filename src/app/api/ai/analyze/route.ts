@@ -9,9 +9,15 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { message, history, localDate, localTime, pendingRequests } = await request.json()
+  const { message, history, localDate, localTime, pendingRequests, groups } = await request.json()
   const today = localDate || new Date().toISOString().split('T')[0]
   const currentTime = localTime || new Date().toTimeString().slice(0, 5)
+
+  const groupsContext = groups?.length > 0
+    ? `\n\nFoydalanuvchining guruhlari:\n${groups.map((g: { id: string; name: string; members: string[] }) =>
+        `- "${g.name}" (id: ${g.id}) — a'zolar: ${g.members.join(', ')}`
+      ).join('\n')}\n\nGuruh uchun vazifa aytilsa (masalan "jamoamizga" yoki guruh nomi aytilsa):\n1. Guruh nomi aniq bo'lsa → groupId ni o'sha guruh id si bilan to'ldir, type: "group" qil\n2. Guruh nomi noaniq bo'lsa → "Qaysi guruh uchun?" deb so'ra (clarify)\n3. Foydalanuvchi guruh nomini aytgach → o'sha guruh id si bilan action: "create", type: "group", groupId: "..." qil`
+    : ''
 
   const pendingContext = pendingRequests?.length > 0
     ? `\n\nKutilayotgan uchrashuv so'rovlari (foydalanuvchiga yuborilgan, javob berilmagan):\n${pendingRequests.map((r: { title: string; proposed_time: string; duration_minutes: number; from_profile?: { full_name?: string; email?: string } }) =>
@@ -61,12 +67,13 @@ Har doim quyidagi JSON formatida javob bering:
       "date_to": "YYYY-MM-DD (delete_range tugash)",
       "time": "HH:MM",
       "end_time": "HH:MM",
-      "location": "Joy"
+      "location": "Joy",
+      "groupId": "guruh id si (faqat group type uchun)"
     }
   ]
 }
 
-Faqat JSON qaytaring, boshqa matn yo'q.${pendingContext}`
+Faqat JSON qaytaring, boshqa matn yo'q.${groupsContext}${pendingContext}`
 
   const conversationHistory = (history || []).slice(-6).map((m: { role: string; content: string }) => ({
     role: m.role === 'user' ? 'user' as const : 'assistant' as const,
