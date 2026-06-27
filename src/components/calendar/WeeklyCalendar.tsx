@@ -7,7 +7,7 @@ import { uz } from 'date-fns/locale'
 import type { Event } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-const HOURS = Array.from({ length: 18 }, (_, i) => i + 6) // 6:00 - 23:00
+const HOURS = Array.from({ length: 24 }, (_, i) => i) // 0:00 - 23:00
 const TYPE_COLORS = {
   personal: 'bg-blue-500 border-blue-600',
   group: 'bg-green-500 border-green-600',
@@ -163,7 +163,7 @@ export default function WeeklyCalendar() {
           <div className="w-[60px] flex-shrink-0">
             {HOURS.map((hour) => (
               <div key={hour} className="h-14 text-right pr-2 pt-1 text-xs text-gray-400 border-b border-gray-50">
-                {hour > 0 ? `${hour}:00` : ''}
+                {`${String(hour).padStart(2, '0')}:00`}
               </div>
             ))}
           </div>
