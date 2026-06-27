@@ -9,9 +9,15 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { message, history, localDate, localTime } = await request.json()
+  const { message, history, localDate, localTime, pendingRequests } = await request.json()
   const today = localDate || new Date().toISOString().split('T')[0]
   const currentTime = localTime || new Date().toTimeString().slice(0, 5)
+
+  const pendingContext = pendingRequests?.length > 0
+    ? `\n\nKutilayotgan uchrashuv so'rovlari (foydalanuvchiga yuborilgan, javob berilmagan):\n${pendingRequests.map((r: { title: string; proposed_time: string; duration_minutes: number; from_profile?: { full_name?: string; email?: string } }) =>
+        `- "${r.title}" — ${r.from_profile?.full_name || r.from_profile?.email} tomonidan, ${new Date(r.proposed_time).toLocaleString('uz')}, ${r.duration_minutes} daqiqa`
+      ).join('\n')}\nAgar foydalanuvchi bu haqda so'rasa, eslatib qo'y.`
+    : ''
 
   const systemPrompt = `Siz "Kundalik" degan shaxsiy kundalik ilovasi yordamchisisiz. Foydalanuvchi bilan o'zbek tilida do'stona suhbat qurasiz.
 
@@ -60,7 +66,7 @@ Har doim quyidagi JSON formatida javob bering:
   ]
 }
 
-Faqat JSON qaytaring, boshqa matn yo'q.`
+Faqat JSON qaytaring, boshqa matn yo'q.${pendingContext}`
 
   const conversationHistory = (history || []).slice(-6).map((m: { role: string; content: string }) => ({
     role: m.role === 'user' ? 'user' as const : 'assistant' as const,

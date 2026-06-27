@@ -1,248 +1,236 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Clock, Send, Check, X, Calendar } from 'lucide-react'
+import { Clock, Search, Send, X, Calendar } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { uz } from 'date-fns/locale'
 
+interface Profile { id: string; email: string; full_name?: string; avatar_url?: string }
 interface BusySlot { start_time: string; end_time: string }
-interface MeetingRequest {
-  id: string
-  title: string
-  proposed_time: string
-  duration_minutes: number
-  status: 'pending' | 'accepted' | 'declined'
-  from_profile: { email: string; full_name?: string; avatar_url?: string }
-  to_profile: { email: string; full_name?: string }
-  from_user_id: string
-  to_user_id: string
-}
 
 export default function BusyTimesPage() {
-  const [requests, setRequests] = useState<MeetingRequest[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Profile | null>(null)
   const [busySlots, setBusySlots] = useState<BusySlot[]>([])
-  const [checkEmail, setCheckEmail] = useState('')
+  const [loadingSlots, setLoadingSlots] = useState(false)
   const [showRequest, setShowRequest] = useState(false)
-  const [newRequest, setNewRequest] = useState({ to_email: '', title: '', proposed_time: '', duration_minutes: 60 })
-  const [loading, setLoading] = useState(false)
-  const [currentUserId, setCurrentUserId] = useState<string>('')
-
-  const fetchRequests = async () => {
-    const res = await fetch('/api/meeting-requests')
-    const data = await res.json()
-    setRequests(Array.isArray(data) ? data : [])
-  }
+  const [newRequest, setNewRequest] = useState({ title: '', date: '', time: '', duration_minutes: 60 })
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
 
   useEffect(() => {
-    fetchRequests()
-    // Get current user id from the first request
-    fetch('/api/meeting-requests').then(r => r.json()).then(data => {
-      if (data.length > 0) {
-        setCurrentUserId(data[0].from_user_id || data[0].to_user_id)
-      }
-    })
+    fetch('/api/profiles').then(r => r.json()).then(d => setProfiles(Array.isArray(d) ? d : []))
   }, [])
 
-  const checkBusyTimes = async () => {
-    if (!checkEmail) return
-    // First get user by email via groups
-    const res = await fetch('/api/groups')
-    const groups = await res.json()
-    let userId = ''
-    for (const g of groups) {
-      for (const m of (g.group_members || [])) {
-        if (m.profiles?.email === checkEmail) { userId = m.profiles.id; break }
-      }
-    }
-    if (!userId) { alert('Bu foydalanuvchi guruhingizda yo\'q'); return }
+  const filtered = profiles.filter(p =>
+    (p.full_name || p.email).toLowerCase().includes(search.toLowerCase())
+  )
 
-    const r = await fetch(`/api/busy-times?user_id=${userId}`)
+  const selectUser = async (profile: Profile) => {
+    setSelected(profile)
+    setBusySlots([])
+    setLoadingSlots(true)
+    const r = await fetch(`/api/busy-times?user_id=${profile.id}`)
     const slots = await r.json()
     setBusySlots(Array.isArray(slots) ? slots : [])
+    setLoadingSlots(false)
   }
 
   const sendRequest = async () => {
-    setLoading(true)
+    if (!selected || !newRequest.title || !newRequest.date || !newRequest.time) return
+    setSending(true)
+    const proposed_time = new Date(`${newRequest.date}T${newRequest.time}:00+05:00`).toISOString()
     const res = await fetch('/api/meeting-requests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newRequest),
+      body: JSON.stringify({
+        to_email: selected.email,
+        title: newRequest.title,
+        proposed_time,
+        duration_minutes: newRequest.duration_minutes,
+      }),
     })
-    setLoading(false)
+    setSending(false)
     if (res.ok) {
+      setSent(true)
       setShowRequest(false)
-      setNewRequest({ to_email: '', title: '', proposed_time: '', duration_minutes: 60 })
-      fetchRequests()
+      setNewRequest({ title: '', date: '', time: '', duration_minutes: 60 })
+      setTimeout(() => setSent(false), 3000)
     }
   }
 
-  const respond = async (id: string, status: 'accepted' | 'declined') => {
-    await fetch('/api/meeting-requests', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status }),
-    })
-    fetchRequests()
-  }
-
-  const incoming = requests.filter((r) => r.to_user_id === currentUserId && r.status === 'pending')
-  const outgoing = requests.filter((r) => r.from_user_id === currentUserId)
-
   return (
     <div className="h-full flex flex-col">
-      <div className="border-b border-gray-100 bg-white px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">Band Vaqtlar</h1>
-          <p className="text-sm text-gray-500">A'zoning band soatlarini ko'ring, uchrashuv so'rang</p>
-        </div>
-        <button
-          onClick={() => setShowRequest(true)}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700"
-        >
-          <Send className="w-4 h-4" />
-          So'rov yuborish
-        </button>
+      <div className="border-b border-gray-100 bg-white px-6 py-4">
+        <h1 className="text-lg font-semibold text-gray-900">Band Vaqtlar</h1>
+        <p className="text-sm text-gray-500">Foydalanuvchi tanlang va band vaqtlarini ko'ring</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Check busy times */}
-        <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-          <h2 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-indigo-500" />
-            Band vaqtlarni tekshirish
-          </h2>
-          <div className="flex gap-2">
-            <input
-              type="email"
-              placeholder="A'zo email manzili"
-              value={checkEmail}
-              onChange={(e) => setCheckEmail(e.target.value)}
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-            />
-            <button onClick={checkBusyTimes} className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-200">
-              Ko'rish
-            </button>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: user list */}
+        <div className="w-64 border-r border-gray-100 flex flex-col bg-white">
+          <div className="p-3 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
+              <input
+                placeholder="Qidirish..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
           </div>
-          {busySlots.length > 0 && (
-            <div className="mt-3 space-y-2">
-              <p className="text-xs text-gray-500">{busySlots.length} ta band vaqt topildi (rejalar ko'rinmaydi)</p>
-              {busySlots.map((slot, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-gray-700 bg-red-50 px-3 py-2 rounded-lg">
-                  <Clock className="w-3.5 h-3.5 text-red-400" />
-                  {format(parseISO(slot.start_time), 'd MMM, HH:mm', { locale: uz })} –{' '}
-                  {format(parseISO(slot.end_time), 'HH:mm', { locale: uz })}
+          <div className="flex-1 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center mt-8">Foydalanuvchi topilmadi</p>
+            ) : (
+              filtered.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => selectUser(p)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors ${selected?.id === p.id ? 'bg-indigo-50 border-r-2 border-indigo-500' : ''}`}
+                >
+                  {p.avatar_url ? (
+                    <img src={p.avatar_url} alt="" className="w-8 h-8 rounded-full flex-shrink-0" />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-medium text-indigo-700 flex-shrink-0">
+                      {(p.full_name || p.email)[0].toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{p.full_name || p.email}</p>
+                    {p.full_name && <p className="text-xs text-gray-400 truncate">{p.email}</p>}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right: busy slots */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {!selected ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400">
+              <Clock className="w-12 h-12 mb-3 opacity-30" />
+              <p>Chap tomonda foydalanuvchi tanlang</p>
+            </div>
+          ) : (
+            <div className="max-w-lg">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  {selected.avatar_url ? (
+                    <img src={selected.avatar_url} alt="" className="w-10 h-10 rounded-full" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center font-medium text-indigo-700">
+                      {(selected.full_name || selected.email)[0].toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-semibold text-gray-900">{selected.full_name || selected.email}</p>
+                    <p className="text-xs text-gray-400">Band vaqtlari (rejalar ko'rinmaydi)</p>
+                  </div>
                 </div>
-              ))}
+                <button
+                  onClick={() => setShowRequest(true)}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Uchrashuv so'ra
+                </button>
+              </div>
+
+              {sent && (
+                <div className="mb-4 bg-green-50 text-green-700 text-sm px-4 py-3 rounded-lg border border-green-200">
+                  So'rov muvaffaqiyatli yuborildi!
+                </div>
+              )}
+
+              {loadingSlots ? (
+                <p className="text-sm text-gray-400">Yuklanmoqda...</p>
+              ) : busySlots.length === 0 ? (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-700">
+                  Yaqin kunda band vaqtlar yo'q — bo'sh!
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500 mb-2">{busySlots.length} ta band vaqt</p>
+                  {busySlots.map((slot, i) => (
+                    <div key={i} className="flex items-center gap-2 bg-red-50 border border-red-100 px-4 py-3 rounded-xl text-sm text-gray-700">
+                      <Clock className="w-4 h-4 text-red-400 flex-shrink-0" />
+                      <span>
+                        {format(parseISO(slot.start_time), 'd MMM, HH:mm', { locale: uz })}
+                        {' – '}
+                        {format(parseISO(slot.end_time), 'HH:mm', { locale: uz })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
-
-        {/* Incoming requests */}
-        {incoming.length > 0 && (
-          <div className="bg-white rounded-xl border border-yellow-100 p-5 shadow-sm">
-            <h2 className="font-medium text-gray-900 mb-3">Kiruvchi so'rovlar ({incoming.length})</h2>
-            <div className="space-y-3">
-              {incoming.map((req) => (
-                <div key={req.id} className="border border-gray-100 rounded-lg p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="font-medium text-sm text-gray-900">{req.title}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {req.from_profile?.full_name || req.from_profile?.email} •{' '}
-                        {format(parseISO(req.proposed_time), 'd MMM HH:mm', { locale: uz })} •{' '}
-                        {req.duration_minutes} daqiqa
-                      </p>
-                    </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => respond(req.id, 'accepted')} className="p-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100">
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => respond(req.id, 'declined')} className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Outgoing requests */}
-        {outgoing.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm">
-            <h2 className="font-medium text-gray-900 mb-3">Yuborilgan so'rovlar</h2>
-            <div className="space-y-3">
-              {outgoing.map((req) => (
-                <div key={req.id} className="border border-gray-100 rounded-lg p-3 flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-sm text-gray-900">{req.title}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {req.to_profile?.full_name || req.to_profile?.email} •{' '}
-                      {format(parseISO(req.proposed_time), 'd MMM HH:mm', { locale: uz })}
-                    </p>
-                  </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                    req.status === 'accepted' ? 'bg-green-50 text-green-700' :
-                    req.status === 'declined' ? 'bg-red-50 text-red-600' :
-                    'bg-yellow-50 text-yellow-700'
-                  }`}>
-                    {req.status === 'accepted' ? 'Qabul qilindi' : req.status === 'declined' ? 'Rad etildi' : 'Kutilmoqda'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Send Request Modal */}
-      {showRequest && (
+      {showRequest && selected && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">Uchrashuv so'rovi</h3>
               <button onClick={() => setShowRequest(false)}><X className="w-4 h-4 text-gray-400" /></button>
             </div>
+            <p className="text-sm text-gray-500 mb-4">Kimga: <b>{selected.full_name || selected.email}</b></p>
             <div className="space-y-3">
-              <input
-                type="email"
-                placeholder="Kimga (email)"
-                value={newRequest.to_email}
-                onChange={(e) => setNewRequest({ ...newRequest, to_email: e.target.value })}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
               <input
                 placeholder="Sarlavha"
                 value={newRequest.title}
-                onChange={(e) => setNewRequest({ ...newRequest, title: e.target.value })}
+                onChange={e => setNewRequest({ ...newRequest, title: e.target.value })}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
-              <input
-                type="datetime-local"
-                value={newRequest.proposed_time}
-                onChange={(e) => setNewRequest({ ...newRequest, proposed_time: new Date(e.target.value).toISOString() })}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-gray-400" />
-                <input
-                  type="number"
-                  placeholder="Davomiyligi (daqiqa)"
-                  value={newRequest.duration_minutes}
-                  onChange={(e) => setNewRequest({ ...newRequest, duration_minutes: parseInt(e.target.value) })}
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                />
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 mb-1 block">Sana</label>
+                  <input
+                    type="date"
+                    value={newRequest.date}
+                    onChange={e => setNewRequest({ ...newRequest, date: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-gray-500 mb-1 block">Vaqt</label>
+                  <input
+                    type="time"
+                    value={newRequest.time}
+                    onChange={e => setNewRequest({ ...newRequest, time: e.target.value })}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 mb-1 block">Davomiyligi (daqiqa)</label>
+                <div className="flex gap-2">
+                  {[30, 60, 90, 120].map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setNewRequest({ ...newRequest, duration_minutes: m })}
+                      className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${newRequest.duration_minutes === m ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      {m} min
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex gap-2 mt-4">
               <button onClick={() => setShowRequest(false)} className="flex-1 border border-gray-200 rounded-lg py-2 text-sm text-gray-600 hover:bg-gray-50">Bekor</button>
               <button
                 onClick={sendRequest}
-                disabled={!newRequest.to_email || !newRequest.title || !newRequest.proposed_time || loading}
+                disabled={!newRequest.title || !newRequest.date || !newRequest.time || sending}
                 className="flex-1 bg-indigo-600 text-white rounded-lg py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
               >
-                {loading ? 'Yuborilmoqda...' : 'Yuborish'}
+                {sending ? 'Yuborilmoqda...' : 'Yuborish'}
               </button>
             </div>
           </div>

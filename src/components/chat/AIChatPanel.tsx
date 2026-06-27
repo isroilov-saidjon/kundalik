@@ -75,10 +75,19 @@ export default function AIChatPanel() {
       const localDate = now.toLocaleDateString('en-CA') // YYYY-MM-DD
       const localTime = now.toTimeString().slice(0, 5) // HH:MM
 
+      // Pending meeting requests
+      const mrRes = await fetch('/api/meeting-requests')
+      const mrData = await mrRes.json()
+      const meRes = await fetch('/api/me')
+      const meData = await meRes.json()
+      const pendingRequests = Array.isArray(mrData)
+        ? mrData.filter((r: { status: string; to_user_id: string }) => r.status === 'pending' && r.to_user_id === meData?.id)
+        : []
+
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: currentInput, history, localDate, localTime }),
+        body: JSON.stringify({ message: currentInput, history, localDate, localTime, pendingRequests }),
       })
       const data = await res.json()
 

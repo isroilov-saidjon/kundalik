@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { BookOpen, MessageSquare, Calendar, Users, Clock, MapPin, LogOut } from 'lucide-react'
+import { BookOpen, MessageSquare, Calendar, Users, Clock, MapPin, LogOut, Bell } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import type { User } from '@supabase/supabase-js'
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/dashboard/calendar', icon: Calendar, label: 'Kalendar' },
   { href: '/dashboard/groups', icon: Users, label: 'Guruhlar' },
   { href: '/dashboard/busy-times', icon: Clock, label: 'Band Vaqtlar' },
+  { href: '/dashboard/messages', icon: Bell, label: 'Xabarlar' },
   { href: '/dashboard/geo', icon: MapPin, label: 'Geo Eslatmalar' },
 ]
 
