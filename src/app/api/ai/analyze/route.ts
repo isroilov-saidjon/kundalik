@@ -1,0 +1,112 @@
+import { NextResponse } from 'next/server'
+import Groq from 'groq-sdk'
+import { createClient } from '@/lib/supabase/server'
+
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+
+export async function POST(request: Request) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { message, history } = await request.json()
+  const now = new Date()
+  const today = now.toISOString().split('T')[0]
+  const currentTime = now.toTimeString().slice(0, 5) // HH:MM
+
+  const systemPrompt = `Siz "Kundalik" degan shaxsiy kundalik ilovasi yordamchisisiz. Foydalanuvchi bilan o'zbek tilida do'stona suhbat qurasiz.
+
+Bugungi sana: ${today}
+Hozirgi vaqt: ${currentTime}
+
+Qoidalar:
+1. Foydalanuvchi bilan oddiy suhbat qiling — savollarga javob bering, maslahat bering, gaplashing.
+2. Agar foydalanuvchi matnida aniq vazifa, uchrashuv, safar yoki eslatma bo'lsa — yarating (action: "create").
+3. Agar foydalanuvchi biror narsani o'chirmoqchi bo'lsa — action: "delete" (bitta), yoki "delete_range" (oraliq).
+4. "bugun", "ertaga", "shu hafta" kabi iboralar uchun aniq sanalarni hisoblang (bugungi sana: ${today}).
+5. Vaqt talqini:
+   - "hozirdan X gacha" yoki "X gacha band qil" → time: ${currentTime}, end_time: X
+   - "kech 6 gacha" yoki "18:00 gacha" → time: ${currentTime} (hozirgi vaqt), end_time: "18:00"
+   - "ertalab", "tushda", "kechqurun" kabi noaniq iboralar — vaqt aniq EMAS
+   - MUHIM: Agar foydalanuvchi soat aytsa (masalan "soat 8") va hozirgi vaqt (${currentTime}) o'sha soatdan o'tgan bo'lsa → u KECHKI vaqtni nazarda tutadi. Masalan hozir 15:00 bo'lsa va "soat 8" desa → 20:00 (kechki 8) deb hisobla. Agar kechki 8 ham o'tgan bo'lsa → ertaga ertalab 08:00.
+6. MUHIM — noaniq ma'lumot bo'lsa SO'RA, saqlaMA:
+   - Vaqt aytilmagan bo'lsa → "Qaysi soatda?" deb so'ra
+   - Davomiylik aytilmagan bo'lsa (masalan faqat "soat 8 da uchrashuvim bor") → "Qancha vaqt davom etadi?" deb so'ra
+   - Ikkisi ham noaniq bo'lsa → ikkalasini ham so'ra
+   Noaniq bo'lsa tasks bo'sh qoldir, SAQLAMA. Foydalanuvchi javob bergandan keyin saqlash uchun action: "create" qil.
+7. Agar vazifa yo'q bo'lsa — tasks massivini bo'sh qoldiring.
+
+Hafta boshi = dushanba. Shu hafta = ${today} dan ${new Date(new Date(today).getTime() + (6 - new Date(today).getDay() + 1) % 7 * 86400000).toISOString().split('T')[0]} gacha.
+
+Har doim quyidagi JSON formatida javob bering:
+{
+  "reply": "Foydalanuvchiga do'stona javob (o'zbek tilida)",
+  "tasks": [
+    {
+      "action": "create|delete|delete_range|clarify",
+      "type": "personal|group|geo",
+      "title": "Vazifa nomi (delete uchun)",
+      "description": "Qo'shimcha ma'lumot",
+      "date": "YYYY-MM-DD",
+      "date_from": "YYYY-MM-DD (delete_range boshlanish)",
+      "date_to": "YYYY-MM-DD (delete_range tugash)",
+      "time": "HH:MM",
+      "end_time": "HH:MM",
+      "location": "Joy"
+    }
+  ]
+}
+
+Faqat JSON qaytaring, boshqa matn yo'q.`
+
+  const conversationHistory = (history || []).slice(-6).map((m: { role: string; content: string }) => ({
+    role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+    content: m.content,
+  }))
+
+  try {
+    const completion = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...conversationHistory,
+        { role: 'user', content: message },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.7,
+    })
+
+    const text = completion.choices[0]?.message?.content || '{}'
+    const parsed = JSON.parse(text)
+
+    // Vaqt o'tib ketgan bo'lsa kechki vaqtga o'tkazish
+    const adjustedTasks = (parsed.tasks || []).map((task: Record<string, unknown>) => {
+      if (task.action !== 'create' || !task.time || task.date !== today) return task
+      const [h, m] = (task.time as string).split(':').map(Number)
+      const taskMinutes = h * 60 + m
+      const [ch, cm] = currentTime.split(':').map(Number)
+      const currentMinutes = ch * 60 + cm
+      // Agar vaqt o'tib ketgan bo'lsa va 12 dan kichik bo'lsa → +12 soat (kechki)
+      if (taskMinutes < currentMinutes && h < 12) {
+        const newHour = h + 12
+        task = { ...task, time: `${String(newHour).padStart(2, '0')}:${String(m).padStart(2, '0')}` }
+        if (task.end_time) {
+          const [eh, em] = (task.end_time as string).split(':').map(Number)
+          task = { ...task, end_time: `${String(eh + 12).padStart(2, '0')}:${String(em).padStart(2, '0')}` }
+        }
+      }
+      return task
+    })
+
+    return NextResponse.json({
+      reply: parsed.reply || 'Tushundim!',
+      tasks: adjustedTasks,
+    })
+  } catch (error) {
+    console.error('AI analyze error:', error)
+    return NextResponse.json(
+      { reply: 'Xatolik yuz berdi. Qaytadan urinib ko\'ring.', tasks: [] },
+      { status: 500 }
+    )
+  }
+}
