@@ -9,10 +9,9 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { message, history } = await request.json()
-  const now = new Date()
-  const today = now.toISOString().split('T')[0]
-  const currentTime = now.toTimeString().slice(0, 5) // HH:MM
+  const { message, history, localDate, localTime } = await request.json()
+  const today = localDate || new Date().toISOString().split('T')[0]
+  const currentTime = localTime || new Date().toTimeString().slice(0, 5)
 
   const systemPrompt = `Siz "Kundalik" degan shaxsiy kundalik ilovasi yordamchisisiz. Foydalanuvchi bilan o'zbek tilida do'stona suhbat qurasiz.
 

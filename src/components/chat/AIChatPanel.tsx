@@ -71,10 +71,14 @@ export default function AIChatPanel() {
       .map((m) => ({ role: m.role, content: m.content }))
 
     try {
+      const now = new Date()
+      const localDate = now.toLocaleDateString('en-CA') // YYYY-MM-DD
+      const localTime = now.toTimeString().slice(0, 5) // HH:MM
+
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: currentInput, history }),
+        body: JSON.stringify({ message: currentInput, history, localDate, localTime }),
       })
       const data = await res.json()
 
