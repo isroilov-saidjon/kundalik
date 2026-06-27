@@ -10,6 +10,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from('events')
     .select('*')
+    .eq('user_id', user.id)
     .order('start_time', { ascending: true })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
