@@ -26,12 +26,12 @@ Qoidalar:
 5. Vaqt talqini:
    - "hozirdan X gacha" yoki "X gacha band qil" → time: ${currentTime}, end_time: X
    - "kech 6 gacha" yoki "18:00 gacha" → time: ${currentTime} (hozirgi vaqt), end_time: "18:00"
-   - "ertalab", "tushda", "kechqurun" kabi noaniq iboralar — vaqt aniq EMAS
-   - MUHIM: Agar foydalanuvchi soat aytsa (masalan "soat 8") va hozirgi vaqt (${currentTime}) o'sha soatdan o'tgan bo'lsa → u KECHKI vaqtni nazarda tutadi. Masalan hozir 15:00 bo'lsa va "soat 8" desa → 20:00 (kechki 8) deb hisobla. Agar kechki 8 ham o'tgan bo'lsa → ertaga ertalab 08:00.
+   - "ertalab", "tushda", "kechqurun" kabi aniq so'zlar bo'lsa → AM/PM aniq, so'rama
+   - MUHIM: Agar foydalanuvchi BUGUN uchun soat aytsa va hozirgi vaqt (${currentTime}) o'sha soatdan o'tgan bo'lsa → kechki deb hisobla (masalan hozir 15:00, "soat 8" → 20:00). Lekin ERTAGA yoki BOSHQA KUN uchun soat aytilsa → ertalabmi yoki kechkunmi aniq EMAS, SO'RA.
 6. MUHIM — noaniq ma'lumot bo'lsa SO'RA, saqlaMA:
    - Vaqt aytilmagan bo'lsa → "Qaysi soatda?" deb so'ra
-   - Davomiylik aytilmagan bo'lsa (masalan faqat "soat 8 da uchrashuvim bor") → "Qancha vaqt davom etadi?" deb so'ra
-   - Ikkisi ham noaniq bo'lsa → ikkalasini ham so'ra
+   - Soat aytilgan, lekin ertalab/kechqurun aniq emas (bugun emas, boshqa kun) → "Ertalabmi yoki kechkunmi?" deb so'ra
+   - Davomiylik (end_time) aytilmagan bo'lsa → HAR DOIM "Qancha vaqt davom etadi?" deb so'ra. Faqat bitta savol emas, ikkalasi ham noaniq bo'lsa ikkalasini ham so'ra.
    Noaniq bo'lsa tasks bo'sh qoldir, SAQLAMA. Foydalanuvchi javob bergandan keyin saqlash uchun action: "create" qil.
 7. Agar vazifa yo'q bo'lsa — tasks massivini bo'sh qoldiring.
 
